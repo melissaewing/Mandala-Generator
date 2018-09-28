@@ -1,113 +1,212 @@
 import java.util.Map;
+import controlP5.*;
 
-int MARGIN = 30;
+//GUI constants
+int MARGIN_TOP = 200;
+int MARGIN_LEFT = 50;
 
-PFont fontA;
-color backgroundcolor = 255;
-PImage undoImg, redoImg;
+int BUTTON_WIDTH = 50;
+int BUTTON_HEIGHT = 30;
+int BUTTON_MARGIN_X = 10;
+int BUTTON_MARGIN_Y = 20;
 
-float colorPickerWidth = 400;    //color picker slider bar width;
-float hue = colorPickerWidth/2;  //initial hue value is in the middle
+int SLIDER_WIDTH = 225;    
+int SLIDER_HEIGHT = 20;
 
-//radius, number of slices, and center variables of mandala
-int r = 230;
-int numSlices = 12;
+int CHECK_BOX_SIZE = 30;
+
+//mandala constants
+int MANDALA_X_OFFSET = 150;
+int START_NUM_SECTIONS = 16;
+
+//GUI controls
+ControlP5 guiController;
+float hue = SLIDER_WIDTH/2;  //initial brush hue value is in the middle
+
+//mandala variables -- radius, number of slices, and center variables 
+int radius = 280;
+int numSections = START_NUM_SECTIONS;
 Point center; 
 
-HashMap<String, Button> buttonHash = new HashMap<String, Button>(); //hashmap to store the buttons
-Button currentButton = null; //currently active button
-
+//event stack keeps track of drawing events for undo/redo/clear
 EventStack es = new EventStack();
 BrushEvent be = null;
 
 //setup to create drawing area and button objects
 void setup() {
   
+  size(1000,600);
   colorMode(HSB);
-  size(800, 600);
   smooth();
-  background(255);
+  background(0);
   
-  undoImg  = loadImage("undo.png");
-  redoImg = loadImage("redo.png");
-  fontA = loadFont("AgencyFB-Reg-20.vlw");
-  textFont(fontA, 28);
+  createGUI();
   
-  createButtons();
-  
-  center = new Point(width/2, height/2 + 35); //determine center point of mandala
+  center = new Point(width/2 + MANDALA_X_OFFSET, height/2); //determine center point of mandala
 }
 
 void draw(){
-
-  //update and draw GUI 
-  displayButtons();
-  hue = drawColorSlider(200, MARGIN, colorPickerWidth,40,hue);  
+  //draw color slider and update brush hue 
+  hue = drawColorSlider(MARGIN_LEFT, MARGIN_TOP, SLIDER_WIDTH, SLIDER_HEIGHT, hue);  
   
-  //draw mandala outline
   drawMandala();
+  drawEvents();
+  drawMandalaBorder();
+}
 
-  //draws everything in the area (all previous events)
+//draw mandala canvas and sections
+void drawMandala() {
+  
+  stroke(0);
+  fill(255);
+  pushMatrix();
+  translate(center.x, center.y);
+  ellipse(0,0, 2*radius, 2*radius);
+  
+  //divive mandala into subsections that will be reflected across the y axis and repeated after rotation 
+  float theta = 0;
+  for (int i=0; i < numSections; i++) {
+    line(0,0, radius*cos(theta), radius*sin(theta));
+    theta += 2*PI/numSections;
+  }
+  
+  popMatrix();
+}
+
+//draws all brush strokes in the drawing area
+void drawEvents() {
   Event e = es.first();
   while (e != null) {
     e.drawEvent();
     e = es.next();
   }
-  
+}
+
+//draw mandala outline
+void drawMandalaBorder() {
   //draw border around mandala
   strokeWeight(15);
   stroke(0);
   noFill();
   pushMatrix();
   translate(center.x, center.y);
-  ellipse(0,0, r*2, 2*r);
+  ellipse(0,0, 2*radius, 2*radius);
   popMatrix();
   strokeWeight(1);
+}
+
+//helper method to check if point is inside mandala
+boolean pointInside(float x, float y) {
+  return pow(x - center.x, 2) + pow(y - center.y, 2) <= pow(radius, 2);
+}
+
+/***** MOUSE DRAW EVENTS *****/
+
+void mouseDragged() {
+
+    //just started to drag mouse, so we have to create the brush event
+    if (be == null) {
+      float brushSize = guiController.getController("brushSize").getValue();
+      boolean mirror =  (((int) guiController.getController("mirror").getValue()) == 1 ? true : false);
+      be = new BrushEvent(hue, brushSize, mirror);
+   
+    //brush event has already been stored in the event stack, retrieve it
+    } else {
+      be = (BrushEvent) es.pop();
+      //check to see if point is inside the mandala. if it is, add points to the brush event 
+      if (pointInside(mouseX, mouseY) &&  pointInside(pmouseX, pmouseY)) {
+        be.addPoints(mouseX, mouseY, pmouseX, pmouseY);
+      }
+    }
+    
+    es.push(be);
+}
+
+void mouseReleased() {
+  //reset brushevent after we are done with a stroke
+  be = null;
+}
+
+ /***** END MOUSE DRAW EVENTS *****/
  
+
+/***** GUI FuNCTIONS *****/
+
+void createGUI() {
+  
+  guiController = new ControlP5(this);
+ 
+  guiController.addSlider("sections")
+     .setPosition(MARGIN_LEFT,MARGIN_TOP+(BUTTON_HEIGHT+BUTTON_MARGIN_Y))
+     .setSize(SLIDER_WIDTH, SLIDER_HEIGHT)
+     .setRange(2,32) 
+     .setValue(START_NUM_SECTIONS)
+     .setNumberOfTickMarks(16)
+     .setSliderMode(Slider.FLEXIBLE);
+                
+ guiController.addSlider("brushSize")
+     .setPosition(MARGIN_LEFT,MARGIN_TOP+2*(BUTTON_HEIGHT+BUTTON_MARGIN_Y))
+     .setSize(SLIDER_WIDTH,SLIDER_HEIGHT)
+     .setRange(0,20)
+     .setValue(1)
+     .setCaptionLabel("brush size");
+   
+  guiController.addButton("undo")
+               .setValue(0)
+               .setPosition(MARGIN_LEFT, MARGIN_TOP+3*(BUTTON_HEIGHT+BUTTON_MARGIN_Y))
+               .setSize(BUTTON_WIDTH, BUTTON_HEIGHT);
+               
+  guiController.addButton("redo")
+               .setValue(0)
+               .setPosition(MARGIN_LEFT+BUTTON_WIDTH+BUTTON_MARGIN_X, MARGIN_TOP+3*(BUTTON_HEIGHT+BUTTON_MARGIN_Y))
+               .setSize(BUTTON_WIDTH, BUTTON_HEIGHT);
+               
+  guiController.addButton("clear")
+               .setValue(0)
+               .setPosition(MARGIN_LEFT+2*(BUTTON_WIDTH+BUTTON_MARGIN_X), MARGIN_TOP+3*(BUTTON_HEIGHT+BUTTON_MARGIN_Y))
+               .setSize(BUTTON_WIDTH, BUTTON_HEIGHT);        
+     
+  guiController.addCheckBox("mirrorCheckBox")
+               .setPosition(MARGIN_LEFT+3*(BUTTON_WIDTH+BUTTON_MARGIN_X)+CHECK_BOX_SIZE/2, MARGIN_TOP+3*(BUTTON_HEIGHT+BUTTON_MARGIN_Y))
+               .setColorForeground(color(120))
+               .setColorActive(color(255))
+               .setSize(CHECK_BOX_SIZE, CHECK_BOX_SIZE)
+               .addItem("mirror", 1);
 }
 
-void displayButtons() {
-   for (Map.Entry b : buttonHash.entrySet()) {
-    Button button = (Button) b.getValue();
-    button.display();
-  }
+// undo function receives changes from controller with name undo
+void undo(int val) {
+  es.undo();
 }
 
-void drawMandala() {
-  
-  fill(backgroundcolor);
-  pushMatrix();
-  translate(center.x, center.y);
-  ellipse(0,0, r*2, 2*r);
-  stroke(0);
-  
-  //divive mandala into subsections that will be reflected across the y axis and repeated after rotation 
-  float theta = 0;
-  for (int i=0; i < numSlices; i++) {
-    line(0,0, r*cos(theta), r*sin(theta));
-    theta += 2*PI/numSlices;
-  }
-  
-  popMatrix();
+// redo function receives changes from controller with name redo
+void redo(int val) {
+  es.redo();
 }
 
-void createButtons() {
-  buttonHash.put("undo", new UndoButton(MARGIN, MARGIN, "undo", es));
-  buttonHash.put("redo", new RedoButton(BUTTON_SIZE + MARGIN, MARGIN, "redo", es));
-  
- // buttonHash.put("background", new Button(MARGIN, BUTTON_SIZE + MARGIN, "background"));
-  
-  Button brushButton = new Button(BUTTON_SIZE + MARGIN, BUTTON_SIZE + MARGIN, "brush");
-  //buttonHash.put("brush", brushButton);
-  currentButton = brushButton;
+// clear function receives changes from controller with name clear
+void clear(int val) {
+  es.clear();
 }
 
+// sections function receives changes from controller with name sections
+// updates numSections variable and rounds label display
+void sections(float sections) {
+   numSections = (int) sections;
+   guiController.getController("sections").setValueLabel(""+numSections);
+}
+
+// brushSize function receives changes from controller with name brushSize 
+// removes label display
+void brushSize(float bs) { 
+   guiController.getController("brushSize").setValueLabel("");
+}
 
 float drawColorSlider(float x, float y, float sliderWidth, float sliderHeight, float hueVal) {
   
-  fill(255);
+  fill(0);
   noStroke();
-  rect(x-5, y-10, sliderWidth+10, sliderHeight+20);  //draw white background behind slider
+  rect(x-5, y-10, sliderWidth+10, sliderHeight+20);  //draw background behind slider
   
   float sliderPos = map(hueVal,0,255,0,sliderWidth); //find the current sliderPosition from hueVal
   
@@ -129,57 +228,12 @@ float drawColorSlider(float x, float y, float sliderWidth, float sliderHeight, f
   int indicatorHeight = 6;
   int indicatorWidth = 5;
   
-  rect(sliderPos + x - indicatorHeight/2, y - indicatorWidth, indicatorHeight, sliderHeight + 2*indicatorWidth);  //this is our slider indicator that moves
-  rect(y + sliderWidth + 200, y, sliderHeight, sliderHeight); // this rectangle displays the current hue on the right
+  rect(sliderPos + x - indicatorHeight/2, y - indicatorWidth, indicatorHeight, sliderHeight + 2*indicatorWidth);  //slider indicator that moves
+  rect(x + sliderWidth + sliderHeight/2, y, sliderHeight, sliderHeight); // rectangle displays the current hue on the right
   
   strokeWeight(1);
   
   return hueVal;
 }
 
-void mouseDragged() {
-
-  if (currentButton != null && currentButton.name.equals("brush")) {
-    //just started to drag mouse, so we have to create the event
-    if (be == null) {
-      be = new BrushEvent(hue);
-    //brush event has already been stored in the event stack
-    } else {
-      be = (BrushEvent) es.pop();
-      //check to see if point is inside the mandala
-      if (pointInside(mouseX, mouseY) &&  pointInside(pmouseX, pmouseY)) {
-        be.addPoints(mouseX, mouseY, pmouseX, pmouseY);
-      //last point was inside mandala but user has gone outside of bounds      
-      } else if (pointInside(pmouseX, pmouseY)) {
-        
-      }
-    }
-    es.push(be);
-  }
-}
-
-//helper method to check if point is inside mandala
-boolean pointInside(float x, float y) {
-  return pow(x - center.x, 2) + pow(y - center.y, 2) <= pow(r, 2);
-}
-
-
-void mouseReleased() {
-  //set brushevent back to null after we are done with a stroke
-  if (currentButton != null && currentButton.name.equals("brush")) {
-    be = null;
-  }
-}
-
-void mousePressed() {
-  //if user clicks, check to see if its on a button
-  for (Map.Entry b : buttonHash.entrySet()) {
-    Button button = (Button) b.getValue();
-    if (button.isOverButton()) {
-      button.press();
-      if (button.isTool) {
-        currentButton = button;
-      }
-    }  
-  }
-}
+/***** END GUI FUNCTIONS *****/
